@@ -4,6 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Smoke‑Free Journey</title>
+    <link rel="manifest" href="site.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Optionally provide an Apple touch icon (PNG recommended). Safari may fallback to a screenshot if absent. -->
+    <!-- <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" /> -->
     <style>
       :root {
         --bg: #0f172a;         /* slate-900 */
@@ -193,6 +199,21 @@
         text-align: center;
       }
 
+      /* iOS A2HS hint */
+      .a2hs {
+        position: fixed; left: 12px; right: 12px; bottom: 12px;
+        background: rgba(2,6,23,.9);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 10px 12px;
+        color: var(--text);
+        display: none;
+        box-shadow: var(--shadow);
+      }
+      .a2hs.show { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .a2hs .msg { font-size: 14px; }
+      .a2hs .close { cursor: pointer; background: transparent; color: var(--muted); border: 0; font-weight: 700; }
+
       /* Controls */
       .controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap }
       .btn { cursor:pointer; border:1px solid rgba(255,255,255,0.12); background:#172554; color:#e5e7eb; padding:6px 10px; border-radius:8px; font-weight:600 }
@@ -289,8 +310,13 @@
       </section>
 
       <footer>
-        Keep going — your future self thanks you.
+        <span>Keep going — your future self thanks you.</span>
+        <span id="pwaStatus" style="display:block; margin-top:6px">Offline: — · Storage: —</span>
       </footer>
+      <div class="a2hs" id="a2hs">
+        <span class="msg">Tip: Add to Home Screen for quick access (Share → Add to Home Screen).</span>
+        <button class="close" id="a2hsClose">×</button>
+      </div>
     </main>
 
     <script>
@@ -578,6 +604,46 @@
       update();
       // Update every second
       setInterval(update, 1000);
+
+      // Register service worker for offline support
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js', { scope: './' })
+          .then(() => {
+            const s = document.getElementById('pwaStatus');
+            if (s) s.textContent = 'Offline: ready ✓ · Storage: requesting…';
+          })
+          .catch(() => {
+            const s = document.getElementById('pwaStatus');
+            if (s) s.textContent = 'Offline: unavailable · Storage: —';
+          });
+      }
+
+      // Request persistent storage where supported to reduce eviction risk
+      (async () => {
+        try {
+          if (navigator.storage && navigator.storage.persist) {
+            const persisted = await navigator.storage.persist();
+            const s = document.getElementById('pwaStatus');
+            if (s) s.textContent = (s.textContent || '').replace('Storage: requesting…', `Storage: ${persisted ? 'persistent ✓' : 'best effort'}`);
+          }
+        } catch {}
+      })();
+
+      // iOS Add-to-Home-Screen hint (Safari only, not running standalone)
+      (function showA2HSHint(){
+        const ua = navigator.userAgent || '';
+        const isIOS = /iPhone|iPad|iPod/i.test(ua);
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+        const dismissed = localStorage.getItem('a2hsDismissed') === '1';
+        const el = document.getElementById('a2hs');
+        const close = document.getElementById('a2hsClose');
+        if (el && close) {
+          close.addEventListener('click', () => { el.classList.remove('show'); localStorage.setItem('a2hsDismissed','1'); });
+        }
+        if (isIOS && !isStandalone && !dismissed && el) {
+          setTimeout(() => el.classList.add('show'), 800);
+        }
+      })();
     </script>
   </body>
 </html>

@@ -27,3 +27,9 @@ Notes:
 
 Just open `index.html` in your browser. No build step or server required.
 
+## PWA / Offline support
+
+- This site is a Progressive Web App: `site.webmanifest` + `sw.js` enable offline use and install on desktop/mobile.
+- For best install experience, add PNG icons at `icons/icon-192.png` and `icons/icon-512.png` (recommended).
+- iOS install: open the site in Safari → Share → Add to Home Screen. Ensure the page is served over HTTPS (GitHub Pages is fine).
+
