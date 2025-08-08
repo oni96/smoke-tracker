@@ -193,6 +193,25 @@
         text-align: center;
       }
 
+      /* Controls */
+      .controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+      .btn { cursor:pointer; border:1px solid rgba(255,255,255,0.12); background:#172554; color:#e5e7eb; padding:6px 10px; border-radius:8px; font-weight:600 }
+      .input { background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:6px 10px }
+
+      /* Collapsible */
+      details { background: transparent; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 8px 12px; }
+      details > summary { cursor: pointer; list-style: none; font-weight: 600; color: var(--text); }
+      details > summary::-webkit-details-marker { display:none; }
+      .summary-row { display:flex; align-items:center; justify-content:space-between; gap:10px }
+      .summary-sub { color: var(--muted); font-size: 12px }
+
+      /* History */
+      .history { margin-top: 18px; }
+      .history .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+      .history .item { background: var(--card); border: 1px solid rgba(255,255,255,0.06); padding: 10px 12px; border-radius: 12px; }
+      .history .item .title { font-weight: 600; }
+      .history .item .sub { color: var(--muted); font-size: 12px; }
+
       @media (max-width: 640px) {
         .timer { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
         header { flex-direction: column; align-items: flex-start; }
@@ -203,12 +222,11 @@
     <main class="container" role="main">
       <header>
         <h1>Smoke‑Free Journey</h1>
-        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+        <div class="controls">
           <p class="since" id="sinceText" style="margin:0">Quit at —</p>
-          <button id="resetBtn" title="If you smoked, restart the timer"
-                  style="cursor:pointer; border:1px solid rgba(255,255,255,0.12); background:#172554; color:#e5e7eb; padding:6px 10px; border-radius:8px; font-weight:600">
-            I slipped — reset timer
-          </button>
+          <input type="datetime-local" class="input" id="startInput" aria-label="Set custom start date" />
+          <button id="applyStartBtn" class="btn" title="Apply custom start date">Set start</button>
+          <button id="resetBtn" class="btn" title="If you smoked, restart the timer">I slipped — reset timer</button>
         </div>
       </header>
 
@@ -252,8 +270,22 @@
           <span class="streak-count"><span id="streakDays">0</span> days</span>
         </div>
         <div class="badges" id="dailyAchievements" aria-label="Recent daily achievements"></div>
-        <h2 style="margin-top:14px">Milestones</h2>
-        <div class="badges" id="milestones" aria-label="Milestone achievements"></div>
+        <details id="milestonePanel" open>
+          <summary>
+            <div class="summary-row">
+              <span>Milestones</span>
+              <span class="summary-sub">Collapse or expand weekly goals</span>
+            </div>
+          </summary>
+          <div style="height:8px"></div>
+          <div class="badges" id="milestones" aria-label="Milestone achievements"></div>
+        </details>
+      </section>
+
+      <section class="history" aria-labelledby="historyTitle">
+        <h2 id="historyTitle">Slip History</h2>
+        <p class="since">Total slips: <strong id="slipCount">0</strong></p>
+        <div class="list" id="slipList"></div>
       </section>
 
       <footer>
@@ -262,8 +294,8 @@
     </main>
 
     <script>
-      // Default quit date/time here (local): 8:00 PM on 6th August 2025
-      const DEFAULT_QUIT_AT = new Date(2025, 7, 6, 20, 0, 0);
+      // Default quit date/time here (local): 7:30 PM on 5th August 2025
+      const DEFAULT_QUIT_AT = new Date(2025, 7, 5, 19, 30, 0);
 
       // Base milestone titles
       const BASE_MILESTONES = [
@@ -303,6 +335,10 @@
       const celebrateEl = el('celebrate');
       const sinceText = el('sinceText');
       const resetBtn = el('resetBtn');
+      const startInput = el('startInput');
+      const applyStartBtn = el('applyStartBtn');
+      const slipCountEl = el('slipCount');
+      const slipList = el('slipList');
       const streakDays = el('streakDays');
       const dailyAchievements = el('dailyAchievements');
       const milestonesWrap = el('milestones');
@@ -317,6 +353,19 @@
         const m = Math.floor((total % 3600) / 60);
         const s = total % 60;
         return `${pad(h)}:${pad(m)}:${pad(s)}`;
+      }
+
+      function fmtDaysHMS(ms) {
+        const d = Math.floor(ms / MS.d);
+        const h = Math.floor((ms % MS.d) / MS.h);
+        const m = Math.floor((ms % MS.h) / MS.m);
+        const s = Math.floor((ms % MS.m) / MS.s);
+        const parts = [];
+        if (d) parts.push(`${d}d`);
+        if (h || parts.length) parts.push(`${h}h`);
+        if (m || parts.length) parts.push(`${m}m`);
+        parts.push(`${s}s`);
+        return parts.join(' ');
       }
 
       function renderMilestones(completedDays) {
@@ -388,12 +437,80 @@
         try { localStorage.setItem('quitAt', date.toISOString()); } catch {}
         lastCompletedDays = -1; // force re-render of achievements
         initSinceText(quitAt);
+        setStartInputFromDate(quitAt);
         update();
       }
 
+      function loadSlips() {
+        try {
+          const raw = localStorage.getItem('slips');
+          if (!raw) return [];
+          const arr = JSON.parse(raw);
+          return Array.isArray(arr) ? arr : [];
+        } catch { return []; }
+      }
+
+      function saveSlips(arr) {
+        try { localStorage.setItem('slips', JSON.stringify(arr)); } catch {}
+      }
+
+      function recordSlip(slipDate) {
+        const slips = loadSlips();
+        const duration = Math.max(0, slipDate.getTime() - quitAt.getTime());
+        slips.push({ at: slipDate.toISOString(), streakMs: duration });
+        saveSlips(slips);
+        renderSlips();
+      }
+
+      function renderSlips() {
+        const slips = loadSlips();
+        slipCountEl.textContent = slips.length;
+        slipList.innerHTML = '';
+        if (!slips.length) {
+          const empty = document.createElement('div');
+          empty.className = 'item';
+          empty.innerHTML = '<div class="title">No slips recorded</div><div class="sub">Stay strong — you got this</div>';
+          slipList.appendChild(empty);
+          return;
+        }
+        const opts = { dateStyle: 'medium', timeStyle: 'short' };
+        for (let i = slips.length - 1; i >= 0; i--) {
+          const s = slips[i];
+          const when = new Date(s.at);
+          const div = document.createElement('div');
+          div.className = 'item';
+          let whenText = '';
+          try { whenText = new Intl.DateTimeFormat(undefined, opts).format(when); }
+          catch { whenText = when.toLocaleString(); }
+          div.innerHTML = `
+            <div class="title">Slip on ${whenText}</div>
+            <div class="sub">Streak before slip: ${fmtDaysHMS(s.streakMs)}</div>
+          `;
+          slipList.appendChild(div);
+        }
+      }
+
+      function setStartInputFromDate(date) {
+        // format YYYY-MM-DDTHH:mm in local time
+        const yyyy = date.getFullYear();
+        const mm = pad(date.getMonth() + 1);
+        const dd = pad(date.getDate());
+        const hh = pad(date.getHours());
+        const mi = pad(date.getMinutes());
+        startInput.value = `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+      }
+
       resetBtn.addEventListener('click', () => {
-        const ok = confirm('Reset timer to now? This will restart your daily progress.');
-        if (ok) setQuitAt(new Date());
+        const ok = confirm('Record a slip and reset the timer to now?');
+        if (ok) { const now = new Date(); recordSlip(now); setQuitAt(now); }
+      });
+
+      applyStartBtn.addEventListener('click', () => {
+        const val = startInput.value;
+        if (!val) { alert('Please pick a date and time.'); return; }
+        const d = new Date(val);
+        if (isNaN(d.getTime())) { alert('Invalid date.'); return; }
+        setQuitAt(d);
       });
       function update() {
         const now = new Date();
@@ -456,6 +573,8 @@
       }
 
       initSinceText(quitAt);
+      setStartInputFromDate(quitAt);
+      renderSlips();
       update();
       // Update every second
       setInterval(update, 1000);
