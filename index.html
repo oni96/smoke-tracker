@@ -233,6 +233,23 @@
       .history .item .title { font-weight: 600; }
       .history .item .sub { color: var(--muted); font-size: 12px; }
 
+      /* Wizard */
+      .wizard-backdrop { position: fixed; inset: 0; background: rgba(2,6,23,0.65); display: none; z-index: 50; }
+      .wizard-backdrop.show { display: grid; place-items: center; }
+      .wizard {
+        width: min(94vw, 560px);
+        background: #0b1220;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        padding: 18px;
+        box-shadow: var(--shadow);
+      }
+      .wizard h2 { margin: 0 0 10px; font-size: 20px; }
+      .wizard p { margin: 0 0 12px; color: var(--muted); }
+      .wizard .row { display: grid; gap: 8px; margin: 10px 0; }
+      .select { background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:8px 10px }
+      .wizard .actions { display:flex; justify-content:flex-end; gap: 10px; margin-top: 12px; }
+
       @media (max-width: 640px) {
         .timer { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
         header { flex-direction: column; align-items: flex-start; }
@@ -291,7 +308,7 @@
           <span class="streak-count"><span id="streakDays">0</span> days</span>
         </div>
         <div class="badges" id="dailyAchievements" aria-label="Recent daily achievements"></div>
-        <details id="milestonePanel" open>
+        <details id="milestonePanel">
           <summary>
             <div class="summary-row">
               <span>Milestones</span>
@@ -317,32 +334,82 @@
         <span class="msg">Tip: Add to Home Screen for quick access (Share → Add to Home Screen).</span>
         <button class="close" id="a2hsClose">×</button>
       </div>
+      <div class="wizard-backdrop" id="wizard">
+        <div class="wizard" role="dialog" aria-labelledby="wizTitle" aria-modal="true">
+          <h2 id="wizTitle">Welcome! Let’s set you up</h2>
+          <p>Pick what you’re quitting and when you started. You can change these later.</p>
+          <div class="row">
+            <label for="wizHabit">What did you quit?</label>
+            <select id="wizHabit" class="select" aria-label="Quit target">
+              <option value="cigarettes">Cigarettes</option>
+              <option value="alcohol">Alcohol</option>
+              <option value="doomscrolling">Doomscrolling</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="wizStart">When did you quit?</label>
+            <input type="datetime-local" id="wizStart" class="input" />
+          </div>
+          <div class="actions">
+            <button id="wizSave" class="btn">Save & start</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script>
       // Default quit date/time here (local): 7:30 PM on 5th August 2025
       const DEFAULT_QUIT_AT = new Date(2025, 7, 5, 19, 30, 0);
 
-      // Base milestone titles
-      const BASE_MILESTONES = [
-        { days: 1,   name: 'Smoke Free Agent 🕵️' },
-        { days: 3,   name: 'Craving Crusher 🔨' },
-        { days: 7,   name: 'Week One Warrior 🛡️' },
-        { days: 14,  name: 'Fortnight Firewall 🔥' },
-        { days: 30,  name: 'Bronze Lungs 🥉' },
-        { days: 90,  name: 'Silver Lungs 🥈' },
-        { days: 182, name: 'Nicotine Nemesis ⚔️' },
-        { days: 365, name: 'Gold Lungs — Legend 🥇' }
-      ];
+      // Category-specific milestone titles
+      const BASE_MILESTONES_BY_HABIT = {
+        cigarettes: [
+          { days: 1,   name: 'Smoke Free Agent 🕵️' },
+          { days: 3,   name: 'Craving Crusher 🔨' },
+          { days: 7,   name: 'Week One Warrior 🛡️' },
+          { days: 14,  name: 'Fortnight Firewall 🔥' },
+          { days: 30,  name: 'Bronze Lungs 🥉' },
+          { days: 90,  name: 'Silver Lungs 🥈' },
+          { days: 182, name: 'Nicotine Nemesis ⚔️' },
+          { days: 365, name: 'Gold Lungs — Legend 🥇' }
+        ],
+        alcohol: [
+          { days: 1,   name: 'Sober Scout 🧭' },
+          { days: 3,   name: 'Hangover Dodger 🚫' },
+          { days: 7,   name: 'Week One Sober 🛡️' },
+          { days: 14,  name: 'Two-Week Teetotaler 🧊' },
+          { days: 30,  name: 'Bronze Liver 🥉' },
+          { days: 90,  name: 'Silver Liver 🥈' },
+          { days: 182, name: 'Temptation Tamer 🐉' },
+          { days: 365, name: 'Sober Legend 🥇' }
+        ],
+        doomscrolling: [
+          { days: 1,   name: 'Scroll Sniper 🎯' },
+          { days: 3,   name: 'Feed Fighter 🥊' },
+          { days: 7,   name: 'Week One Focus 🧠' },
+          { days: 14,  name: 'Mindful Master 🔆' },
+          { days: 30,  name: 'Bronze Focus 🥉' },
+          { days: 90,  name: 'Silver Focus 🥈' },
+          { days: 182, name: 'Distraction Nemesis ⚔️' },
+          { days: 365, name: 'Attention Ace 🥇' }
+        ]
+      };
+
+      function getHabit() {
+        return localStorage.getItem('habit') || 'cigarettes';
+      }
 
       // Build milestones every 7 days (from day 7) up to a horizon
       function buildMilestonesHorizon(maxDays = 365) {
-        const map = new Map(BASE_MILESTONES.map(m => [m.days, m.name]));
+        const habit = getHabit();
+        const base = BASE_MILESTONES_BY_HABIT[habit] || BASE_MILESTONES_BY_HABIT.cigarettes;
+        const map = new Map(base.map(m => [m.days, m.name]));
         const weeks = Math.floor(maxDays / 7);
         for (let w = 1; w <= weeks; w++) {
           const d = w * 7;
           if (!map.has(d)) {
-            map.set(d, `Weekly Streak: Week ${w} 🏅`);
+            const label = habit === 'alcohol' ? 'Sober Streak' : habit === 'doomscrolling' ? 'Focus Streak' : 'Weekly Streak';
+            map.set(d, `${label}: Week ${w} 🏅`);
           }
         }
         return Array.from(map.entries())
@@ -439,12 +506,21 @@
         }
       }
 
+      function habitLabel(habit) {
+        switch (habit) {
+          case 'alcohol': return 'alcohol';
+          case 'doomscrolling': return 'doomscrolling';
+          default: return 'cigarettes';
+        }
+      }
+
       function initSinceText(date) {
         const opts = { dateStyle: 'medium', timeStyle: 'short' };
+        const h = habitLabel(getHabit());
         try {
-          sinceText.textContent = `Quit at ${new Intl.DateTimeFormat(undefined, opts).format(date)}`;
+          sinceText.textContent = `Quit ${h} at ${new Intl.DateTimeFormat(undefined, opts).format(date)}`;
         } catch {
-          sinceText.textContent = `Quit at ${date.toLocaleString()}`;
+          sinceText.textContent = `Quit ${h} at ${date.toLocaleString()}`;
         }
       }
 
@@ -483,7 +559,7 @@
       function recordSlip(slipDate) {
         const slips = loadSlips();
         const duration = Math.max(0, slipDate.getTime() - quitAt.getTime());
-        slips.push({ at: slipDate.toISOString(), streakMs: duration });
+        slips.push({ at: slipDate.toISOString(), streakMs: duration, habit: getHabit() });
         saveSlips(slips);
         renderSlips();
       }
@@ -537,6 +613,46 @@
         const d = new Date(val);
         if (isNaN(d.getTime())) { alert('Invalid date.'); return; }
         setQuitAt(d);
+      });
+
+      // Wizard setup
+      const wiz = document.getElementById('wizard');
+      const wizHabit = document.getElementById('wizHabit');
+      const wizStart = document.getElementById('wizStart');
+      const wizSave = document.getElementById('wizSave');
+
+      function openWizard() {
+        // Prefill start with current time
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = pad(now.getMonth() + 1);
+        const dd = pad(now.getDate());
+        const hh = pad(now.getHours());
+        const mi = pad(now.getMinutes());
+        wizStart.value = `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+        wiz.classList.add('show');
+      }
+
+      function maybeShowWizard() {
+        const setup = localStorage.getItem('setupDone') === '1';
+        const habit = localStorage.getItem('habit');
+        const haveQuit = !!localStorage.getItem('quitAt');
+        if (!setup || !habit || !haveQuit) {
+          openWizard();
+        }
+      }
+
+      wizSave?.addEventListener('click', () => {
+        const habit = wizHabit.value || 'cigarettes';
+        const val = wizStart.value;
+        if (!val) { alert('Please pick a date and time.'); return; }
+        const d = new Date(val);
+        if (isNaN(d.getTime())) { alert('Invalid date.'); return; }
+        try { localStorage.setItem('habit', habit); } catch {}
+        try { localStorage.setItem('setupDone', '1'); } catch {}
+        setQuitAt(d);
+        renderMilestones(Math.floor((new Date() - d) / MS.d));
+        wiz.classList.remove('show');
       });
       function update() {
         const now = new Date();
@@ -604,6 +720,9 @@
       update();
       // Update every second
       setInterval(update, 1000);
+      // Ensure milestones start collapsed
+      (document.getElementById('milestonePanel')||{}).open = false;
+      maybeShowWizard();
 
       // Register service worker for offline support
       if ('serviceWorker' in navigator) {
